@@ -1,6 +1,9 @@
 # requests used to fetch API data
 import requests
 
+# Allow for silencing insecure warnings from requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
 # Builtin JSON module for testing - might not need later
 import json
 
@@ -11,7 +14,7 @@ import time
 import argparse
 
 # Prometheus modules for HTTP server & metrics
-from prometheus_client import start_http_server
+from prometheus_client import start_http_server, Summary
 from prometheus_client.core import GaugeMetricFamily, CounterMetricFamily, REGISTRY
 
 
@@ -33,18 +36,23 @@ class SmartZoneCollector():
 
     def collect(self):
 
+        # Disable insecure request warnings if SSL verification is disabled
+        if self._insecure == False:
+             requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
         # Session object used to keep persistent cookies and connection pooling
         s = requests.Session()
 
         # Set `verify` variable to enable or disable SSL checking
         # Use string method format methods to create new string with inserted value (in this case, the URL)
-        s.get('{}/api/public/v5_0/session'.format(self._target), verify=self._insecure)
+
+        s.get('{}/wsg/api/public/v5_0/session'.format(self._target), verify=self._insecure)
 
         # Define URL arguments as a dictionary of strings 'payload'
         payload = {'username': self._user, 'password': self._password}
 
         # Call the payload using the json parameter
-        r = s.post('{}/api/public/v5_0/session'.format(self._target), json=payload, verify=self._insecure)
+        r = s.post('{}/wsg/api/public/v5_0/session'.format(self._target), json=payload, verify=self._insecure)
 
         # Create a dictionary from the cookie name-value pair, then get the value based on the JSESSIONID key
         session_id = r.cookies.get_dict().get('JSESSIONID')
@@ -79,7 +87,8 @@ class SmartZoneCollector():
         statuses = list(metrics.keys())
 
         # Get the data from the SmartZone
-        controller = requests.get('{}/api/public/v5_0/controller'.format(self._target), headers=headers, verify=self._insecure)
+        # controller = requests.get('{}/api/public/v5_0/controller'.format(self._target), headers=headers, verify=self._insecure)
+        controller = requests.get('{}/wsg/api/public/v5_0/controller'.format(self._target), headers=headers, verify=self._insecure)
 
         # Decode the JSON in the reply from the SmartZone
         result = json.loads(controller.text)
@@ -91,7 +100,6 @@ class SmartZoneCollector():
             id = c['id']
             for s in statuses:
                 if s == 'uptimeInSec':
-                     print(c.get(s))
                      metrics[s].add_metric([id], c.get(s))
                 # Export a dummy value for string-only metrics
                 else:
@@ -124,10 +132,10 @@ class SmartZoneCollector():
 
         # Define the AP statuses we want to collect as strings in a list - we will loop through this later
         statuses = list(metrics.keys())
-        # statuses = ['totalAPs', 'discoveryAPs', 'connectedAPs', 'disconnectedAPs', 'rebootingAPs', 'clients']
 
         # Get the data from the SmartZone
-        inventory = requests.get('{}/api/public/v5_0/system/inventory'.format(self._target), headers=headers, verify=self._insecure)
+        # inventory = requests.get('{}/api/public/v5_0/system/inventory'.format(self._target), headers=headers, verify=self._insecure)
+        inventory = requests.get('{}/wsg/api/public/v5_0/system/inventory'.format(self._target), headers=headers, verify=self._insecure)
 
         # Decode the JSON in the reply from the SmartZone
         result = json.loads(inventory.text)
@@ -149,13 +157,66 @@ class SmartZoneCollector():
         for m in metrics.values():
             yield m
 
+        # Get SmartZone AP metrics
+        # Use API query instead of simple GET to reduce number of requests and improve performance
+
+        metrics = {
+            'alerts':
+                GaugeMetricFamily('smartzone_ap_alerts', 'Number of AP alerts', labels=["zone","ap_group","mac","name"]),
+            'latency24G':
+                GaugeMetricFamily('smartzone_ap_latency_24g_milliseconds', 'AP latency on 2.4G channels in milliseconds', labels=["zone","ap_group","mac","name"]),
+            'latency50G':
+                GaugeMetricFamily('smartzone_ap_latency_5g_milliseconds', 'AP latency on 5G channels in milliseconds', labels=["zone","ap_group","mac","name"]),
+            'numClients24G':
+                GaugeMetricFamily('smartzone_ap_connected_clients_24g', 'Number of clients connected to 2.4G channels on this AP', labels=["zone","ap_group","mac","name"]),
+            'numClients5G':
+                GaugeMetricFamily('smartzone_ap_connected_clients_5g', 'Number of clients connected to 5G channels on this AP', labels=["zone","ap_group","mac","name"]),
+            'status':
+                GaugeMetricFamily('smartzone_ap_status', 'AP status', labels=["zone","ap_group","mac","name","status"])
+                }
+
+        statuses = list(metrics.keys())
+
+        # To-do: set dynamic AP limit based on SmartZone inventory
+        raw = {'page': 0, 'start': 0, 'limit': 1000}
+
+        # Grab a list of APs
+        aps = requests.post('{}/wsg/api/public/v5_0/query/ap'.format(self._target), json=raw, headers=headers, verify=self._insecure)
+
+        result = json.loads(aps.text)
+
+        # Generate the metrics based on the values
+        for ap in result['list']:
+            for s in statuses:
+                # 'Status' is a string value only, so we can't export the default value
+                if s == 'status':
+                    state_name = ['Online','Offline','Flagged']
+                    # By default set value to 0 and increase to 1 to reflect current state
+                    # Similar to how node_exporter handles systemd states
+                    for n in state_name:
+                        value = 0
+                        if ap.get(s) == unicode(n):
+                            value = 1
+                        metrics[s].add_metric([ap['zoneName'], ap['apGroupName'], ap['apMac'], ap['deviceName'], n], value)
+                else:
+                    if ap.get(s) is not None:
+                        metrics[s].add_metric([ap['zoneName'], ap['apGroupName'], ap['apMac'], ap['deviceName']], ap.get(s))
+                    # Return 0 for metrics with values of None
+                    else:
+                        metrics[s].add_metric([ap['zoneName'], ap['apGroupName'], ap['apMac'], ap['deviceName']], 0)
+
+        # Yield the metrics we want
+        for m in metrics.values():
+            yield m
+
 
 # Function to parse command line arguments and pass them to the collector
 def parse_args():
     parser = argparse.ArgumentParser(description='Ruckus SmartZone exporter for Prometheus')
+
     # Use add_argument() method to specify options
-    # By default argparse will treat any arguments with flags (- or --) as optional - rather than make these required (considered bad form),
-    # we can create another group for required options
+    # By default argparse will treat any arguments with flags (- or --) as optional
+    # Rather than make these required (considered bad form), we can create another group for required options
     required_named = parser.add_argument_group('required named arguments')
     required_named.add_argument('-u', '--user', help='SmartZone API user', required=True)
     required_named.add_argument('-p', '--password', help='SmartZone API password', required=True)
@@ -177,11 +238,13 @@ def main():
         REGISTRY.register(SmartZoneCollector(args.target, args.user, args.password, args.insecure))
         # Start HTTP server on specified port
         start_http_server(port)
-        print("Polling {}. Listening on :{}".format(args.target, port))
+        if args.insecure == False:
+             print('WARNING: Connection to {} may not be secure.').format(args.target)
+        print("Polling {}. Listening on ::{}".format(args.target, port))
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print(" Keyboard interrupt, exiting")
+        print(" Keyboard interrupt, exiting...")
         exit(0)
 
 

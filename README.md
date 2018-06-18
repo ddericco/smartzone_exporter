@@ -11,6 +11,7 @@ The goal of this exporter is twofold: provide a faster and more reliable alterna
 The following metrics are currently supported:
 * Controller summary (uptime, model, serial, hostname, version, AP firmware version)
 * System inventory (total APs, discovery APs, connected APs, disconnected APs, rebooting APs, clients)
+* AP statistics (status, alerts, latency, connected clients)
 
 Additional metrics will be added over time.
 
