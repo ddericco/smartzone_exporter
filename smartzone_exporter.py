@@ -54,6 +54,9 @@ class SmartZoneCollector():
         # Call the payload using the json parameter
         r = s.post('{}/wsg/api/public/v5_0/session'.format(self._target), json=payload, verify=self._insecure)
 
+        # Raise bad requests
+        r.raise_for_status()
+
         # Create a dictionary from the cookie name-value pair, then get the value based on the JSESSIONID key
         session_id = r.cookies.get_dict().get('JSESSIONID')
 
@@ -197,13 +200,14 @@ class SmartZoneCollector():
                         value = 0
                         if ap.get(s) == unicode(n):
                             value = 1
-                        metrics[s].add_metric([ap['zoneName'], ap['apGroupName'], ap['apMac'], ap['deviceName'], n], value)
+                        # Wrap the zone and group names in str() to avoid issues with None values at export time
+                        metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n], value)
                 else:
                     if ap.get(s) is not None:
-                        metrics[s].add_metric([ap['zoneName'], ap['apGroupName'], ap['apMac'], ap['deviceName']], ap.get(s))
+                        metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], ap.get(s))
                     # Return 0 for metrics with values of None
                     else:
-                        metrics[s].add_metric([ap['zoneName'], ap['apGroupName'], ap['apMac'], ap['deviceName']], 0)
+                        metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], 0)
 
         # Yield the metrics we want
         for m in metrics.values():
