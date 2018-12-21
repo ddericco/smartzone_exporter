@@ -34,44 +34,12 @@ class SmartZoneCollector():
         self._password = password
         self._insecure = insecure
 
-    def collect(self):
+        self._headers = None
+        self._statuses = None
 
-        # Disable insecure request warnings if SSL verification is disabled
-        if self._insecure == False:
-             requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-
-        # Session object used to keep persistent cookies and connection pooling
-        s = requests.Session()
-
-        # Set `verify` variable to enable or disable SSL checking
-        # Use string method format methods to create new string with inserted value (in this case, the URL)
-
-        s.get('{}/wsg/api/public/v5_0/session'.format(self._target), verify=self._insecure)
-
-        # Define URL arguments as a dictionary of strings 'payload'
-        payload = {'username': self._user, 'password': self._password}
-
-        # Call the payload using the json parameter
-        r = s.post('{}/wsg/api/public/v5_0/session'.format(self._target), json=payload, verify=self._insecure)
-
-        # Raise bad requests
-        r.raise_for_status()
-
-        # Create a dictionary from the cookie name-value pair, then get the value based on the JSESSIONID key
-        session_id = r.cookies.get_dict().get('JSESSIONID')
-
-        # Add HTTP headers for all requests EXCEPT logon API
-        # Integrate the session ID into the header
-        headers = {'Content-Type': 'application/json;charset=UTF-8', 'Cookie': 'JSESSIONID={}'.format(session_id)}
-
-
-        # Get SmartZone controller summary
-
-        # Define the metrics we want to capture
         # With the exception of uptime, all of these metrics are strings
         # Following the example of node_exporter, we'll set these string metrics with a default value of 1
-
-        metrics = {
+        self._controller_metrics = {
             'model':
                 GaugeMetricFamily('smartzone_controller_model', 'SmartZone controller model', labels=["id", "model"]),
             'serialNumber':
@@ -86,39 +54,7 @@ class SmartZoneCollector():
                 GaugeMetricFamily('smartzone_controller_ap_firmware_version', 'Firmware version on controller APs', labels=["id", "apVersion"])
                 }
 
-        # Create a list of statuses based on the metrics above (specifically the keys)
-        statuses = list(metrics.keys())
-
-        # Get the data from the SmartZone
-        # controller = requests.get('{}/api/public/v5_0/controller'.format(self._target), headers=headers, verify=self._insecure)
-        controller = requests.get('{}/wsg/api/public/v5_0/controller'.format(self._target), headers=headers, verify=self._insecure)
-
-        # Decode the JSON in the reply from the SmartZone
-        result = json.loads(controller.text)
-
-        # When in doubt, review the JSON output _carefully_
-        # print(result)
-
-        for c in result['list']:
-            id = c['id']
-            for s in statuses:
-                if s == 'uptimeInSec':
-                     metrics[s].add_metric([id], c.get(s))
-                # Export a dummy value for string-only metrics
-                else:
-                     extra = c[s]
-                     metrics[s].add_metric([id, extra], 1)
-
-        for m in metrics.values():
-            yield m
-
-
-        # Get SmartZone inventory per zone
-
-        # Define the metrics we want to capture
-        # Since the AP and client counts can go up or down, use the gauge metric type
-        # Keep the zone name and zone UUID as labels
-        metrics = {
+        self._zone_metrics = {
             'totalAPs':
                 GaugeMetricFamily('smartzone_zone_total_aps', 'Total number of APs in zone', labels=["zone_name","zone_id"]),
             'discoveryAPs':
@@ -133,37 +69,7 @@ class SmartZoneCollector():
                 GaugeMetricFamily('smartzone_zone_total_connected_clients', 'Total number of connected clients in zone', labels=["zone_name","zone_id"])
                 }
 
-        # Define the AP statuses we want to collect as strings in a list - we will loop through this later
-        statuses = list(metrics.keys())
-
-        # Get the data from the SmartZone
-        # inventory = requests.get('{}/api/public/v5_0/system/inventory'.format(self._target), headers=headers, verify=self._insecure)
-        inventory = requests.get('{}/wsg/api/public/v5_0/system/inventory'.format(self._target), headers=headers, verify=self._insecure)
-
-        # Decode the JSON in the reply from the SmartZone
-        result = json.loads(inventory.text)
-
-        # When in doubt, review the JSON output _carefully_
-        # print result
-
-        # For each zone captured from the query:
-        # - Grab the zone name and zone ID for labeling purposes
-        # - Loop through the statuses in statuses
-        # - For each status, get the value for the status in each zone and add to the metric
-        for zone in result['list']:
-            zone_name = zone['zoneName']
-            zone_id = zone['zoneId']
-            for s in statuses:
-                metrics[s].add_metric([zone_name, zone_id], zone.get(s))
-
-        # Each metric has several values associated with it, in this case broken down by zone name and zone ID
-        for m in metrics.values():
-            yield m
-
-        # Get SmartZone AP metrics
-        # Use API query instead of simple GET to reduce number of requests and improve performance
-
-        metrics = {
+        self._ap_metrics = {
             'alerts':
                 GaugeMetricFamily('smartzone_ap_alerts', 'Number of AP alerts', labels=["zone","ap_group","mac","name"]),
             'latency24G':
@@ -180,19 +86,87 @@ class SmartZoneCollector():
                 GaugeMetricFamily('smartzone_ap_gps', 'GPS coordinates for this AP', labels=["zone","ap_group","mac","name","lat", "long"])
                 }
 
-        statuses = list(metrics.keys())
 
-        # To-do: set dynamic AP limit based on SmartZone inventory
-        raw = {'page': 0, 'start': 0, 'limit': 1000}
+    def get_session(self):
+        # Disable insecure request warnings if SSL verification is disabled
+        if self._insecure == False:
+             requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-        # Grab a list of APs
-        aps = requests.post('{}/wsg/api/public/v5_0/query/ap'.format(self._target), json=raw, headers=headers, verify=self._insecure)
+        # Session object used to keep persistent cookies and connection pooling
+        s = requests.Session()
 
-        result = json.loads(aps.text)
+        # Set `verify` variable to enable or disable SSL checking
+        # Use string method format methods to create new string with inserted value (in this case, the URL)
+        s.get('{}/wsg/api/public/v5_0/session'.format(self._target), verify=self._insecure)
 
+        # Define URL arguments as a dictionary of strings 'payload'
+        payload = {'username': self._user, 'password': self._password}
+
+        # Call the payload using the json parameter
+        r = s.post('{}/wsg/api/public/v5_0/session'.format(self._target), json=payload, verify=self._insecure)
+
+        # Raise bad requests
+        r.raise_for_status()
+
+        # Create a dictionary from the cookie name-value pair, then get the value based on the JSESSIONID key
+        session_id = r.cookies.get_dict().get('JSESSIONID')
+
+        # Add HTTP headers for all requests EXCEPT logon API
+        # Integrate the session ID into the header
+        self._headers = {'Content-Type': 'application/json;charset=UTF-8', 'Cookie': 'JSESSIONID={}'.format(session_id)}
+
+
+    def get_metrics(self, metrics, api_path):
+        # Add the individual URL paths for the API call
+        self._statuses = list(metrics.keys())
+        if metrics == self._ap_metrics:
+            # For APs, use POST and API query to reduce number of requests and improve performance
+            # To-do: set dynamic AP limit based on SmartZone inventory
+            raw = {'page': 0, 'start': 0, 'limit': 1000}
+            r = requests.post('{}/wsg/api/public/v5_0/{}'.format(self._target, api_path), json=raw, headers=self._headers, verify=self._insecure)
+        else:
+            r = requests.get('{}/wsg/api/public/v5_0/{}'.format(self._target, api_path), headers=self._headers, verify=self._insecure)
+
+        result = json.loads(r.text)
+        return result
+
+
+    def collect(self):
+
+        self.get_session()
+
+        # Get SmartZone controller metrics
+        for c in self.get_metrics(self._controller_metrics, 'controller')['list']:
+            id = c['id']
+            for s in self._statuses:
+                if s == 'uptimeInSec':
+                     self._controller_metrics[s].add_metric([id], c.get(s))
+                # Export a dummy value for string-only metrics
+                else:
+                     extra = c[s]
+                     self._controller_metrics[s].add_metric([id, extra], 1)
+
+        for m in self._controller_metrics.values():
+            yield m
+
+        # Get SmartZone inventory per zone
+        # For each zone captured from the query:
+        # - Grab the zone name and zone ID for labeling purposes
+        # - Loop through the statuses in statuses
+        # - For each status, get the value for the status in each zone and add to the metric
+        for zone in self.get_metrics(self._zone_metrics, 'system/inventory')['list']:
+            zone_name = zone['zoneName']
+            zone_id = zone['zoneId']
+            for s in self._statuses:
+                self._zone_metrics[s].add_metric([zone_name, zone_id], zone.get(s))
+
+        for m in self._zone_metrics.values():
+            yield m
+
+        # Get SmartZone AP metrics
         # Generate the metrics based on the values
-        for ap in result['list']:
-            for s in statuses:
+        for ap in self.get_metrics(self._ap_metrics, 'query/ap')['list']:
+            for s in self._statuses:
                 # 'Status' is a string value only, so we can't export the default value
                 if s == 'status':
                     state_name = ['Online','Offline','Flagged']
@@ -203,7 +177,7 @@ class SmartZoneCollector():
                         if ap.get(s) == unicode(n):
                             value = 1
                         # Wrap the zone and group names in str() to avoid issues with None values at export time
-                        metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n], value)
+                        self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n], value)
                 elif s == 'deviceGps':
                     try:
                         lat = ap.get(s).split(',')[0]
@@ -211,16 +185,15 @@ class SmartZoneCollector():
                     except IndexError:
                         lat = 'none'
                         long = 'none'
-                    metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], 1)
+                    self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], 1)
                 else:
                     if ap.get(s) is not None:
-                        metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], ap.get(s))
+                        self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], ap.get(s))
                     # Return 0 for metrics with values of None
                     else:
-                        metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], 0)
+                        self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], 0)
 
-        # Yield the metrics we want
-        for m in metrics.values():
+        for m in self._ap_metrics.values():
             yield m
 
 
