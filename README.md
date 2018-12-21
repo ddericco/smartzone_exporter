@@ -11,9 +11,9 @@ The goal of this exporter is twofold: provide a faster and more reliable alterna
 The following metrics are currently supported:
 * Controller summary (uptime, model, serial, hostname, version, AP firmware version)
 * System inventory (total APs, discovery APs, connected APs, disconnected APs, rebooting APs, clients)
-* AP statistics (status, alerts, latency, connected clients)
+* AP statistics (status, alerts, latency, connected clients, GPS)
 
-Additional metrics will be added over time.
+Additional metrics may be added over time.
 
 ## Usage
 ```
@@ -36,7 +36,7 @@ required named arguments:
 ```
 ### Example
 ```
-python smartzone_exporter -u jimmy -p jangles -t https://ruckus.jjangles.com:8443
+python smartzone_exporter.py -u jimmy -p jangles -t https://ruckus.jjangles.com:8443
 ```
 
 ## Requirements
@@ -48,7 +48,7 @@ This exporter has been tested on the following versions:
 
 ## Installation
 ```
-git clone git@github.com:ddericco/smartzone_exporter.git
+git clone https://github.com/ddericco/smartzone_exporter.git
 cd smartzone_exporter
-pip install -r requirements.txt
+pipenv install
 ```
