@@ -175,7 +175,9 @@ class SmartZoneCollector():
             'numClients5G':
                 GaugeMetricFamily('smartzone_ap_connected_clients_5g', 'Number of clients connected to 5G channels on this AP', labels=["zone","ap_group","mac","name"]),
             'status':
-                GaugeMetricFamily('smartzone_ap_status', 'AP status', labels=["zone","ap_group","mac","name","status"])
+                GaugeMetricFamily('smartzone_ap_status', 'AP status', labels=["zone","ap_group","mac","name","status"]),
+            'deviceGps':
+                GaugeMetricFamily('smartzone_ap_gps', 'GPS coordinates for this AP', labels=["zone","ap_group","mac","name","lat", "long"])
                 }
 
         statuses = list(metrics.keys())
@@ -202,6 +204,14 @@ class SmartZoneCollector():
                             value = 1
                         # Wrap the zone and group names in str() to avoid issues with None values at export time
                         metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n], value)
+                elif s == 'deviceGps':
+                    try:
+                        lat = ap.get(s).split(',')[0]
+                        long = ap.get(s).split(',')[1]
+                    except IndexError:
+                        lat = 'none'
+                        long = 'none'
+                    metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], 1)
                 else:
                     if ap.get(s) is not None:
                         metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName']], ap.get(s))
