@@ -218,7 +218,7 @@ class SmartZoneCollector():
                     # Similar to how node_exporter handles systemd states
                     for n in state_name:
                         value = 0
-                        if ap.get(s) == unicode(n):
+                        if ap.get(s) == str(n):
                             value = 1
                         # Wrap the zone and group names in str() to avoid issues with None values at export time
                         self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n, lat, long], value)
@@ -262,7 +262,7 @@ def main():
         # Start HTTP server on specified port
         start_http_server(port)
         if args.insecure == False:
-             print('WARNING: Connection to {} may not be secure.').format(args.target)
+             print('WARNING: Connection to {} may not be secure.'.format(args.target))
         print("Polling {}. Listening on ::{}".format(args.target, port))
         while True:
             time.sleep(1)
