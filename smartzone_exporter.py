@@ -25,7 +25,6 @@ class SmartZoneCollector():
 
     # Initialize the class and specify required argument with no default value
     # When defining class methods, must explicitly list `self` as first argument
-
     def __init__(self, target, user, password, insecure):
         # Strip any trailing "/" characters from the provided url
         self._target = target.rstrip("/")
@@ -39,91 +38,6 @@ class SmartZoneCollector():
 
         # With the exception of uptime, all of these metrics are strings
         # Following the example of node_exporter, we'll set these string metrics with a default value of 1
-        self._controller_metrics = {
-            'model':
-                GaugeMetricFamily('smartzone_controller_model',
-                'SmartZone controller model',
-                labels=["id", "model"]),
-            'serialNumber':
-                GaugeMetricFamily('smartzone_controller_serial_number',
-                'SmartZone controller serial number',
-                labels=["id", "serialNumber"]),
-            'uptimeInSec':
-                CounterMetricFamily('smartzone_controller_uptime_seconds',
-                'Controller uptime in sections',
-                labels=["id"]),
-            'hostName':
-                GaugeMetricFamily('smartzone_controller_hostname',
-                'Controller hostname',
-                labels=["id", "hostName"]),
-            'version':
-                GaugeMetricFamily('smartzone_controller_version',
-                'Controller version',
-                labels=["id", "version"]),
-            'apVersion':
-                GaugeMetricFamily('smartzone_controller_ap_firmware_version',
-                'Firmware version on controller APs',
-                labels=["id", "apVersion"])
-                }
-
-        self._zone_metrics = {
-            'totalAPs':
-                GaugeMetricFamily('smartzone_zone_total_aps',
-                'Total number of APs in zone',
-                labels=["zone_name","zone_id"]),
-            'discoveryAPs':
-                GaugeMetricFamily('smartzone_zone_discovery_aps',
-                'Number of zone APs in discovery state',
-                labels=["zone_name","zone_id"]),
-            'connectedAPs':
-                GaugeMetricFamily('smartzone_zone_connected_aps',
-                'Number of connected zone APs',
-                labels=["zone_name","zone_id"]),
-            'disconnectedAPs':
-                GaugeMetricFamily('smartzone_zone_disconnected_aps',
-                'Number of disconnected zone APs',
-                labels=["zone_name","zone_id"]),
-            'rebootingAPs':
-                GaugeMetricFamily('smartzone_zone_rebooting_aps',
-                'Number of zone APs in rebooting state',
-                labels=["zone_name","zone_id"]),
-            'clients':
-                GaugeMetricFamily('smartzone_zone_total_connected_clients',
-                'Total number of connected clients in zone',
-                labels=["zone_name","zone_id"])
-                }
-
-        self._ap_metrics = {
-            'alerts':
-                GaugeMetricFamily('smartzone_ap_alerts',
-                'Number of AP alerts',
-                labels=["zone","ap_group","mac","name","lat","long"]),
-            'latency24G':
-                GaugeMetricFamily('smartzone_ap_latency_24g_milliseconds',
-                'AP latency on 2.4G channels in milliseconds',
-                labels=["zone","ap_group","mac","name","lat","long"]),
-            'latency50G':
-                GaugeMetricFamily('smartzone_ap_latency_5g_milliseconds',
-                'AP latency on 5G channels in milliseconds',
-                labels=["zone","ap_group","mac","name","lat","long"]),
-            'numClients24G':
-                GaugeMetricFamily('smartzone_ap_connected_clients_24g',
-                'Number of clients connected to 2.4G channels on this AP',
-                labels=["zone","ap_group","mac","name","lat","long"]),
-            'numClients5G':
-                GaugeMetricFamily('smartzone_ap_connected_clients_5g',
-                'Number of clients connected to 5G channels on this AP',
-                labels=["zone","ap_group","mac","name","lat","long"]),
-            'status':
-                GaugeMetricFamily('smartzone_ap_status',
-                'AP status',
-                labels=["zone","ap_group","mac","name","status","lat","long"])
-            #'deviceGps':
-            #    GaugeMetricFamily('smartzone_ap_gps',
-            #    'GPS coordinates for this AP',
-            #    labels=["zone","ap_group","mac","name","lat","long"])
-                }
-
 
     def get_session(self):
         # Disable insecure request warnings if SSL verification is disabled
@@ -157,7 +71,7 @@ class SmartZoneCollector():
     def get_metrics(self, metrics, api_path):
         # Add the individual URL paths for the API call
         self._statuses = list(metrics.keys())
-        if metrics == self._ap_metrics:
+        if 'query' in api_path:
             # For APs, use POST and API query to reduce number of requests and improve performance
             # To-do: set dynamic AP limit based on SmartZone inventory
             raw = {'page': 0, 'start': 0, 'limit': 1000}
@@ -171,20 +85,101 @@ class SmartZoneCollector():
 
     def collect(self):
 
+        controller_metrics = {
+            'model':
+                GaugeMetricFamily('smartzone_controller_model',
+                'SmartZone controller model',
+                labels=["id", "model"]),
+            'serialNumber':
+                GaugeMetricFamily('smartzone_controller_serial_number',
+                'SmartZone controller serial number',
+                labels=["id", "serialNumber"]),
+            'uptimeInSec':
+                CounterMetricFamily('smartzone_controller_uptime_seconds',
+                'Controller uptime in sections',
+                labels=["id"]),
+            'hostName':
+                GaugeMetricFamily('smartzone_controller_hostname',
+                'Controller hostname',
+                labels=["id", "hostName"]),
+            'version':
+                GaugeMetricFamily('smartzone_controller_version',
+                'Controller version',
+                labels=["id", "version"]),
+            'apVersion':
+                GaugeMetricFamily('smartzone_controller_ap_firmware_version',
+                'Firmware version on controller APs',
+                labels=["id", "apVersion"])
+                }
+
+        zone_metrics = {
+            'totalAPs':
+                GaugeMetricFamily('smartzone_zone_total_aps',
+                'Total number of APs in zone',
+                labels=["zone_name","zone_id"]),
+            'discoveryAPs':
+                GaugeMetricFamily('smartzone_zone_discovery_aps',
+                'Number of zone APs in discovery state',
+                labels=["zone_name","zone_id"]),
+            'connectedAPs':
+                GaugeMetricFamily('smartzone_zone_connected_aps',
+                'Number of connected zone APs',
+                labels=["zone_name","zone_id"]),
+            'disconnectedAPs':
+                GaugeMetricFamily('smartzone_zone_disconnected_aps',
+                'Number of disconnected zone APs',
+                labels=["zone_name","zone_id"]),
+            'rebootingAPs':
+                GaugeMetricFamily('smartzone_zone_rebooting_aps',
+                'Number of zone APs in rebooting state',
+                labels=["zone_name","zone_id"]),
+            'clients':
+                GaugeMetricFamily('smartzone_zone_total_connected_clients',
+                'Total number of connected clients in zone',
+                labels=["zone_name","zone_id"])
+                }
+
+        ap_metrics = {
+            'alerts':
+                GaugeMetricFamily('smartzone_ap_alerts',
+                'Number of AP alerts',
+                labels=["zone","ap_group","mac","name","lat","long"]),
+            'latency24G':
+                GaugeMetricFamily('smartzone_ap_latency_24g_milliseconds',
+                'AP latency on 2.4G channels in milliseconds',
+                labels=["zone","ap_group","mac","name","lat","long"]),
+            'latency50G':
+                GaugeMetricFamily('smartzone_ap_latency_5g_milliseconds',
+                'AP latency on 5G channels in milliseconds',
+                labels=["zone","ap_group","mac","name","lat","long"]),
+            'numClients24G':
+                GaugeMetricFamily('smartzone_ap_connected_clients_24g',
+                'Number of clients connected to 2.4G channels on this AP',
+                labels=["zone","ap_group","mac","name","lat","long"]),
+            'numClients5G':
+                GaugeMetricFamily('smartzone_ap_connected_clients_5g',
+                'Number of clients connected to 5G channels on this AP',
+                labels=["zone","ap_group","mac","name","lat","long"]),
+            'status':
+                GaugeMetricFamily('smartzone_ap_status',
+                'AP status',
+                labels=["zone","ap_group","mac","name","status","lat","long"])
+                }
+
         self.get_session()
 
         # Get SmartZone controller metrics
-        for c in self.get_metrics(self._controller_metrics, 'controller')['list']:
+        for c in self.get_metrics(controller_metrics, 'controller')['list']:
             id = c['id']
             for s in self._statuses:
                 if s == 'uptimeInSec':
-                     self._controller_metrics[s].add_metric([id], c.get(s))
+                     controller_metrics[s].add_metric([id], c.get(s))
                 # Export a dummy value for string-only metrics
                 else:
                      extra = c[s]
-                     self._controller_metrics[s].add_metric([id, extra], 1)
+                     controller_metrics[s].add_metric([id, extra], 1)
 
-        for m in self._controller_metrics.values():
+        for m in controller_metrics.values():
             yield m
 
         # Get SmartZone inventory per zone
@@ -192,18 +187,18 @@ class SmartZoneCollector():
         # - Grab the zone name and zone ID for labeling purposes
         # - Loop through the statuses in statuses
         # - For each status, get the value for the status in each zone and add to the metric
-        for zone in self.get_metrics(self._zone_metrics, 'system/inventory')['list']:
+        for zone in self.get_metrics(zone_metrics, 'system/inventory')['list']:
             zone_name = zone['zoneName']
             zone_id = zone['zoneId']
             for s in self._statuses:
-                self._zone_metrics[s].add_metric([zone_name, zone_id], zone.get(s))
+                zone_metrics[s].add_metric([zone_name, zone_id], zone.get(s))
 
-        for m in self._zone_metrics.values():
+        for m in zone_metrics.values():
             yield m
 
         # Get SmartZone AP metrics
         # Generate the metrics based on the values
-        for ap in self.get_metrics(self._ap_metrics, 'query/ap')['list']:
+        for ap in self.get_metrics(ap_metrics, 'query/ap')['list']:
             try:
                 lat = ap.get('deviceGps').split(',')[0]
                 long = ap.get('deviceGps').split(',')[1]
@@ -221,15 +216,15 @@ class SmartZoneCollector():
                         if ap.get(s) == str(n):
                             value = 1
                         # Wrap the zone and group names in str() to avoid issues with None values at export time
-                        self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n, lat, long], value)
+                        ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], n, lat, long], value)
                 else:
                     if ap.get(s) is not None:
-                        self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], ap.get(s))
+                        ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], ap.get(s))
                     # Return 0 for metrics with values of None
                     else:
-                        self._ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], 0)
+                        ap_metrics[s].add_metric([str(ap['zoneName']), str(ap['apGroupName']), ap['apMac'], ap['deviceName'], lat, long], 0)
 
-        for m in self._ap_metrics.values():
+        for m in ap_metrics.values():
             yield m
 
 
